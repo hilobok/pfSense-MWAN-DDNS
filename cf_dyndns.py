@@ -19,8 +19,10 @@ import glob
 class BasePlatform:
     """Abstract base class defining the interface for platform-specific functions."""
     def get_public_ipv4_addresses(self, physical_interfaces):
+        """Returns a list of (physical_iface, public_ip) tuples."""
         raise NotImplementedError
     def get_public_ipv6_addresses(self, physical_interfaces):
+        """Returns a list of (physical_iface, public_ip) tuples."""
         raise NotImplementedError
     def get_gateway_monitoring_thresholds(self):
         raise NotImplementedError
@@ -29,8 +31,6 @@ class BasePlatform:
     def get_gateway_interface_map(self):
         raise NotImplementedError
     def get_physical_to_logical_interface_map(self):
-        raise NotImplementedError
-    def get_ip_to_physical_interface_map(self):
         raise NotImplementedError
     def get_dyndns_ids(self):
         raise NotImplementedError
@@ -55,10 +55,28 @@ class PfSensePlatform(BasePlatform):
                 if match:
                     ip = match.group(1)
                     octets = ip.split(".")
-                    if ip.startswith("127.") or ip.startswith("169.254."): continue
-                    if ip.startswith("10.") or ip.startswith("192.168."): continue
-                    if int(octets[0]) == 172 and 16 <= int(octets[1]) <= 31: continue
-                    public_ips.append(ip)
+                    if ip.startswith("127.") or ip.startswith("169.254."):
+                        continue
+
+                    is_private = (
+                        ip.startswith("10.") or
+                        ip.startswith("192.168.") or
+                        (int(octets[0]) == 172 and 16 <= int(octets[1]) <= 31)
+                    )
+
+                    if is_private:
+                        try:
+                            curl = subprocess.run(
+                                ["curl", "-s", "-4", "--interface", iface, "https://ifconfig.me/"],
+                                stdout=subprocess.PIPE, text=True, timeout=10
+                            )
+                            external_ip = curl.stdout.strip()
+                            if re.match(r"^\d+\.\d+\.\d+\.\d+$", external_ip):
+                                public_ips.append((iface, external_ip))
+                        except subprocess.TimeoutExpired:
+                            pass
+                    else:
+                        public_ips.append((iface, ip))
         return public_ips
 
     def get_public_ipv6_addresses(self, physical_interfaces):
@@ -76,7 +94,7 @@ class PfSensePlatform(BasePlatform):
                 if match:
                     ip = match.group(1).split('%')[0]
                     if ip.startswith(("fe80", "fc", "fd")) or ip in ("::1", "::", "::10"): continue
-                    public_ips.append(ip)
+                    public_ips.append((iface, ip))
         return public_ips
 
     def get_gateway_monitoring_thresholds(self):
@@ -158,21 +176,6 @@ class PfSensePlatform(BasePlatform):
             print(f"❌ Could not parse physical to logical interface map: {e}")
         return mapping
 
-    def get_ip_to_physical_interface_map(self):
-        result = subprocess.run(["/sbin/ifconfig"], stdout=subprocess.PIPE, text=True)
-        output = result.stdout
-        ip_to_iface = {}
-        iface = None
-        for line in output.splitlines():
-            if line and not line.startswith("\t") and ":" in line:
-                iface = line.split(":")[0]
-            elif iface:
-                match4 = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", line)
-                if match4: ip_to_iface[match4.group(1)] = iface
-                match6 = re.search(r"inet6 ([a-f0-9:]+)", line)
-                if match6: ip_to_iface[match6.group(1).split("%")[0]] = iface
-        return ip_to_iface
-
     def get_dyndns_ids(self):
         mapping = {}
         try:
@@ -190,15 +193,23 @@ class PfSensePlatform(BasePlatform):
     def update_cache_files(self, healthy_ipv4, unhealthy_ipv4, healthy_ipv6, unhealthy_ipv6, mappings, quiet=False):
         if not quiet:
             print("Updating pfSense cache files to reflect gateway health...")
-        ip_to_phys_if_map = mappings['ip_to_phys']
-        phys_to_pf_if_map = mappings['phys_to_pf']
-        dyndns_id_map = mappings['dyndns_ids']
 
-        all_ips_to_process = { 'healthy': healthy_ipv4 + healthy_ipv6, 'unhealthy': list(unhealthy_ipv4) + list(unhealthy_ipv6) }
-        for status, ip_list in all_ips_to_process.items():
-            for ip in ip_list:
-                physical_iface = ip_to_phys_if_map.get(ip)
-                if not physical_iface: continue
+        healthy_ipv4_iface   = mappings['healthy_ipv4_iface']    # [(phys_if, ip), ...]
+        unhealthy_ipv4_iface = mappings['unhealthy_ipv4_iface']  # [(phys_if, ip), ...]
+        healthy_ipv6_iface   = mappings['healthy_ipv6_iface']    # [(phys_if, ip), ...]
+        unhealthy_ipv6_iface = mappings['unhealthy_ipv6_iface']  # [(phys_if, ip), ...]
+        phys_to_pf_if_map    = mappings['phys_to_pf']
+        dyndns_id_map        = mappings['dyndns_ids']
+
+        all_pairs = [
+            ('healthy',   healthy_ipv4_iface),
+            ('unhealthy', unhealthy_ipv4_iface),
+            ('healthy',   healthy_ipv6_iface),
+            ('unhealthy', unhealthy_ipv6_iface),
+        ]
+
+        for status, pairs in all_pairs:
+            for physical_iface, ip in pairs:
                 pf_iface = phys_to_pf_if_map.get(physical_iface)
                 if not pf_iface: continue
                 dyndns_id = dyndns_id_map.get(pf_iface)
@@ -372,32 +383,41 @@ class CloudflareDynDNSUpdater:
         gateway_statuses = self.platform.get_gateway_statuses(thresholds)
         gateway_to_if_map = self.platform.get_gateway_interface_map()
         phys_to_pf_if_map = self.platform.get_physical_to_logical_interface_map()
-        ip_to_phys_if_map = self.platform.get_ip_to_physical_interface_map()
         if_to_gateway_map = {v: k for k, v in gateway_to_if_map.items()}
         dyndns_id_map = self.platform.get_dyndns_ids()
 
         self._log(f"Gateway Thresholds: {thresholds}")
         self._log(f"Gateway Statuses: {gateway_statuses}")
 
-        # 2. Get all public IPs from all interfaces
+        # 2. Get all public IPs from all interfaces — both return (phys_iface, ip) tuples
         all_ipv4 = self.platform.get_public_ipv4_addresses(self.config['allowed_physical_interfaces'])
         all_ipv6 = self.platform.get_public_ipv6_addresses(self.config['allowed_physical_interfaces'])
 
         # 3. Filter IPs based on intelligent gateway status
         healthy_ipv4, healthy_ipv6 = [], []
-        for ip in all_ipv4:
-            phys_if = ip_to_phys_if_map.get(ip)
-            pf_if = phys_to_pf_if_map.get(phys_if)
-            gw_name = if_to_gateway_map.get(pf_if)
-            if gateway_statuses.get(gw_name) == 'online': healthy_ipv4.append(ip)
-        for ip in all_ipv6:
-            phys_if = ip_to_phys_if_map.get(ip)
-            pf_if = phys_to_pf_if_map.get(phys_if)
-            gw_name = if_to_gateway_map.get(pf_if)
-            if gateway_statuses.get(gw_name) == 'online': healthy_ipv6.append(ip)
+        healthy_ipv4_iface, unhealthy_ipv4_iface = [], []
+        healthy_ipv6_iface, unhealthy_ipv6_iface = [], []
 
-        unhealthy_ipv4 = set(all_ipv4) - set(healthy_ipv4)
-        unhealthy_ipv6 = set(all_ipv6) - set(healthy_ipv6)
+        for phys_if, ip in all_ipv4:
+            pf_if = phys_to_pf_if_map.get(phys_if)
+            gw_name = if_to_gateway_map.get(pf_if)
+            if gateway_statuses.get(gw_name) == 'online':
+                healthy_ipv4.append(ip)
+                healthy_ipv4_iface.append((phys_if, ip))
+            else:
+                unhealthy_ipv4_iface.append((phys_if, ip))
+
+        for phys_if, ip in all_ipv6:
+            pf_if = phys_to_pf_if_map.get(phys_if)
+            gw_name = if_to_gateway_map.get(pf_if)
+            if gateway_statuses.get(gw_name) == 'online':
+                healthy_ipv6.append(ip)
+                healthy_ipv6_iface.append((phys_if, ip))
+            else:
+                unhealthy_ipv6_iface.append((phys_if, ip))
+
+        unhealthy_ipv4 = {ip for _, ip in unhealthy_ipv4_iface}
+        unhealthy_ipv6 = {ip for _, ip in unhealthy_ipv6_iface}
 
         # 4. Check if an update is needed and execute
         previous_state = self.load_previous_state()
@@ -408,10 +428,14 @@ class CloudflareDynDNSUpdater:
         # of the ignored IP family instead of reconciling it to an empty set.
         if self.args.ipv4only:
             healthy_ipv6 = list(previous_state.get("ipv6", {}).keys())
+            healthy_ipv6_iface = []
+            unhealthy_ipv6_iface = []
             unhealthy_ipv6 = set()
             ipv6_changed = False
         if self.args.ipv6only:
             healthy_ipv4 = list(previous_state.get("ipv4", {}).keys())
+            healthy_ipv4_iface = []
+            unhealthy_ipv4_iface = []
             unhealthy_ipv4 = set()
             ipv4_changed = False
 
@@ -428,11 +452,25 @@ class CloudflareDynDNSUpdater:
                 print(f"[DRY RUN]   AAAA records -> {healthy_ipv6}")
             elif self.update_dns(healthy_ipv4, healthy_ipv6):
                 self.save_state(healthy_ipv4, healthy_ipv6)
-                mappings = {'ip_to_phys': ip_to_phys_if_map, 'phys_to_pf': phys_to_pf_if_map, 'dyndns_ids': dyndns_id_map}
-                self.platform.update_cache_files(healthy_ipv4, unhealthy_ipv4, healthy_ipv6, unhealthy_ipv6, mappings, quiet=self.args.quiet)
+                mappings = {
+                    'healthy_ipv4_iface':   healthy_ipv4_iface,
+                    'unhealthy_ipv4_iface': unhealthy_ipv4_iface,
+                    'healthy_ipv6_iface':   healthy_ipv6_iface,
+                    'unhealthy_ipv6_iface': unhealthy_ipv6_iface,
+                    'phys_to_pf':           phys_to_pf_if_map,
+                    'dyndns_ids':           dyndns_id_map,
+                }
+                self.platform.update_cache_files(
+                    healthy_ipv4, unhealthy_ipv4,
+                    healthy_ipv6, unhealthy_ipv6,
+                    mappings, quiet=self.args.quiet
+                )
                 self._log("✅ Cloudflare DNS update and cache files successful.")
                 proxied_label = " (proxied)" if self.config.get('proxied') else ""
-                msg = f"Cloudflare DynDNS for {self.config['record_name']}{proxied_label} updated.\nHealthy IPs:\nIPv4: {healthy_ipv4}\nIPv6: {healthy_ipv6}"
+                msg = (
+                    f"Cloudflare DynDNS for {self.config['record_name']}{proxied_label} updated.\n"
+                    f"Healthy IPs:\nIPv4: {healthy_ipv4}\nIPv6: {healthy_ipv6}"
+                )
                 self.send_push_notification("Cloudflare DynDNS Gateway Update", msg)
             else:
                 print("❌ Cloudflare DNS update failed.")
