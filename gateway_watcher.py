@@ -105,7 +105,9 @@ class GatewayWatcher:
             print(f"[{time.ctime()}] NOTE: No IPv6 DynDNS configurations found. Adding --ipv4only flag.")
             command.append("--ipv4only")
         try:
-            subprocess.run(command, timeout=60, capture_output=True)
+            print(f"Run updater - [{command}]")
+            result = subprocess.run(command, timeout=60, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            print(result.stdout, end='')
         except Exception as e:
             print(f"[{time.ctime()}] WATCHER ERROR: Failed to execute updater script: {e}")
 
