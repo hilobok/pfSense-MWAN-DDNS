@@ -448,9 +448,10 @@ class CloudflareDynDNSUpdater:
 
             if self.args.dry_run:
                 print("[DRY RUN] Would update Cloudflare DNS records.")
-                print(f"[DRY RUN]   A records  -> {healthy_ipv4}")
+                ipv4_for_update = healthy_ipv4[:1] if self.args.first_ip_only else healthy_ipv4
+                print(f"[DRY RUN]   A records  -> {ipv4_for_update}")
                 print(f"[DRY RUN]   AAAA records -> {healthy_ipv6}")
-            elif self.update_dns(healthy_ipv4, healthy_ipv6):
+            elif self.update_dns(healthy_ipv4[:1] if self.args.first_ip_only else healthy_ipv4, healthy_ipv6):
                 self.save_state(healthy_ipv4, healthy_ipv6)
                 mappings = {
                     'healthy_ipv4_iface':   healthy_ipv4_iface,
@@ -500,6 +501,7 @@ if __name__ == "__main__":
     parser.add_argument("--force-update", action="store_true", help="Always run DNS update, even without detected IP change")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
     parser.add_argument("--reason", type=str, default="Scheduled", help="Reason for the run (e.g., Gateway-Event)")
+    parser.add_argument("--first-ip-only", action="store_true", help="Set only the first healthy IPv4 address in DNS instead of all available")
     args = parser.parse_args()
 
     # === Execution ===

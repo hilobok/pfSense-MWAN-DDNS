@@ -5,6 +5,7 @@ import subprocess
 import glob
 import time
 import argparse
+import shlex
 import xml.etree.ElementTree as ET
 
 # --- Configuration ---
@@ -93,14 +94,16 @@ class PfSensePlatform(BasePlatform):
 # --- Main Watcher Logic ---
 
 class GatewayWatcher:
-    def __init__(self, platform, updater_script_path):
+    def __init__(self, platform, updater_script_path, updater_extra_args=None):
         self.platform = platform
         self.updater_script_path = updater_script_path
+        self.updater_extra_args = updater_extra_args or []
         self.previous_statuses = {}
 
     def run_updater(self):
         print(f"[{time.ctime()}] Change detected, triggering main updater script.")
         command = [ "/usr/local/bin/python3.11", self.updater_script_path, "--force-update", "--reason=Gateway-Event" ]
+        command.extend(self.updater_extra_args)
         if not self.platform.is_ipv6_dyndns_configured():
             print(f"[{time.ctime()}] NOTE: No IPv6 DynDNS configurations found. Adding --ipv4only flag.")
             command.append("--ipv4only")
@@ -141,8 +144,13 @@ if __name__ == "__main__":
             "and --ipv4only CLI contract (e.g. pdns_dyndns.py or cf_dyndns.py)."
         ),
     )
+    parser.add_argument(
+        "--updater-args",
+        default="",
+        help="Extra arguments to pass to the updater script (e.g. \"--first-ip-only --quiet\").",
+    )
     args = parser.parse_args()
 
     platform = PfSensePlatform()
-    watcher = GatewayWatcher(platform, args.updater)
+    watcher = GatewayWatcher(platform, args.updater, shlex.split(args.updater_args))
     watcher.start()
