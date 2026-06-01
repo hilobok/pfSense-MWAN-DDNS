@@ -446,12 +446,12 @@ class CloudflareDynDNSUpdater:
             if not self.args.force_update: self._log("Change detected, performing DNS update...")
             else: self._log(f"Forcing DNS update (Reason: {self.args.reason})...")
 
+            ipv4_for_update = healthy_ipv4[:1] if self.args.first_ip_only else healthy_ipv4
             if self.args.dry_run:
                 print("[DRY RUN] Would update Cloudflare DNS records.")
-                ipv4_for_update = healthy_ipv4[:1] if self.args.first_ip_only else healthy_ipv4
                 print(f"[DRY RUN]   A records  -> {ipv4_for_update}")
                 print(f"[DRY RUN]   AAAA records -> {healthy_ipv6}")
-            elif self.update_dns(healthy_ipv4[:1] if self.args.first_ip_only else healthy_ipv4, healthy_ipv6):
+            elif self.update_dns(ipv4_for_update, healthy_ipv6):
                 self.save_state(healthy_ipv4, healthy_ipv6)
                 mappings = {
                     'healthy_ipv4_iface':   healthy_ipv4_iface,
