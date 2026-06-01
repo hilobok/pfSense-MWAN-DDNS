@@ -116,7 +116,7 @@ class PfSensePlatform(BasePlatform):
                     result = subprocess.run(['cat', socket_path], capture_output=True, text=True, timeout=2)
                     socket_output = result.stdout.strip()
                     parts = socket_output.split()
-                    if len(parts) >= 4 and parts[3] == '0':
+                    if len(parts) >= 4:
                         live_latency_us = int(parts[1])
                         live_loss_pct = int(parts[3])
                         gw_thresholds = thresholds.get(gateway_name, {})
@@ -192,7 +192,7 @@ class PfSensePlatform(BasePlatform):
         ip_to_phys_if_map = mappings['ip_to_phys']
         phys_to_pf_if_map = mappings['phys_to_pf']
         dyndns_id_map = mappings['dyndns_ids']
-        
+
         all_ips_to_process = { 'healthy': healthy_ipv4 + healthy_ipv6, 'unhealthy': list(unhealthy_ipv4) + list(unhealthy_ipv6) }
         for status, ip_list in all_ips_to_process.items():
             for ip in ip_list:
@@ -202,7 +202,7 @@ class PfSensePlatform(BasePlatform):
                 if not pf_iface: continue
                 dyndns_id = dyndns_id_map.get(pf_iface)
                 if dyndns_id is None: continue
-                
+
                 cache_path = f"/conf/dyndns_{pf_iface}custom''{dyndns_id}.cache"
                 content_to_write = ip if status == 'healthy' else ip + "\n"
                 try:

@@ -63,7 +63,7 @@ class PfSensePlatform(BasePlatform):
                     result = subprocess.run(['cat', socket_path], capture_output=True, text=True, timeout=2)
                     socket_output = result.stdout.strip()
                     parts = socket_output.split()
-                    if len(parts) >= 4 and parts[3] == '0':
+                    if len(parts) >= 4:
                         live_latency_us = int(parts[1])
                         live_loss_pct = int(parts[3])
                         gw_thresholds = thresholds.get(gateway_name, {})
