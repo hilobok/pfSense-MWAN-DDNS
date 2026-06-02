@@ -164,11 +164,11 @@ While the system is designed to be fully automatic, you can run the main updater
 
 ### `cf_dyndns.py` — Cloudflare Updater
 
-A drop-in alternative to `pdns_dyndns.py` that updates Cloudflare DNS records instead of PowerDNS. All platform-specific logic (gateway health, IP detection, pfSense cache files) is identical.
+A drop-in alternative to `pdns_dyndns.py` that updates Cloudflare DNS records instead of PowerDNS. All platform-specific logic (gateway health, IP detection, pfSense cache files) is identical. It also supports `--first-ip-only`, which limits the DNS update to the first healthy IPv4 address instead of all healthy IPs.
 
 #### Command-Line Arguments
 
-All arguments are the same as `pdns_dyndns.py`:
+All arguments are the same as `pdns_dyndns.py`, plus one additional flag:
 
 * `-h, --help`: Shows the help message.
 * `--dry-run`: Shows what would be done without making any changes to Cloudflare.
@@ -177,6 +177,7 @@ All arguments are the same as `pdns_dyndns.py`:
 * `--force-update`: Always perform the Cloudflare update, bypassing the state check.
 * `--quiet`: Minimal output.
 * `--reason REASON`: Logging label for why the script ran.
+* `--first-ip-only`: Limits the DNS update to the first healthy IPv4 address instead of all healthy IPs. Useful when only a single A record is desired (e.g. when the Cloudflare proxy is enabled).
 
 ### `gateway_watcher.py` — Watcher Daemon
 
@@ -184,6 +185,7 @@ All arguments are the same as `pdns_dyndns.py`:
 
 * `-h, --help`: Shows the help message.
 * `--updater PATH`: Path to the updater script to execute when a gateway state change is detected. Defaults to `/root/pdns_dyndns.py`.
+* `--updater-args ARGS`: Extra arguments to forward to the updater script, supplied as a single quoted string (e.g. `"--first-ip-only --quiet"`).
 
     ```shell
     # Default (PowerDNS)
@@ -191,6 +193,9 @@ All arguments are the same as `pdns_dyndns.py`:
 
     # Cloudflare
     /usr/local/bin/python3.11 /root/gateway_watcher.py --updater /root/cf_dyndns.py
+
+    # Cloudflare — single IP only
+    /usr/local/bin/python3.11 /root/gateway_watcher.py --updater /root/cf_dyndns.py --updater-args="--first-ip-only"
     ```
 
 ## Porting to Other Platforms (e.g., OPNsense, OpenWrt)
