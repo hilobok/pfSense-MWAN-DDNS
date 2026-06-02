@@ -108,15 +108,19 @@ This final step makes the system event-driven and upgrade-safe.
 3.  Configure the command:
 
     **PowerDNS path (default):**
-    * **Command**: `/usr/local/bin/python3.11 /root/gateway_watcher.py &`
+    * **Command**: `/usr/sbin/daemon -f -r -S -T gateway_watcher -l daemon -s notice -P /var/run/gateway_watcher.pid /usr/local/bin/python3.11 -u /root/gateway_watcher.py`
 
     **Cloudflare path:**
-    * **Command**: `/usr/local/bin/python3.11 /root/gateway_watcher.py --updater /root/cf_dyndns.py &`
+    * **Command**: `/usr/sbin/daemon -f -r -S -T gateway_watcher -l daemon -s notice -P /var/run/gateway_watcher.pid /usr/local/bin/python3.11 -u /root/gateway_watcher.py --updater /root/cf_dyndns.py --updater-args="--first-ip-only"`
 
-    > The `&` is crucial for running the daemon in the background. Adjust the Python version if needed.
+    > You can skip `--updater-args="--first-ip-only"` if you need all IPs.
 
     * **Shellcmd Type**: `shellcmd`. This ensures it runs late in the boot process.
     * **Description**: `DynDNS Gateway Watcher Daemon`.
+
+    > Don't background the watcher with a bare `&` (or `daemon` without `-f`) - that keeps the boot session's stdout/stderr open prevents rc.bootup from completing, which fails Boot Environment verification and triggers a rollback on pfSense 26.x.
+
+    > `/usr/sbin/daemon` solves that and gives you more: `-f` fully detaches the process (releasing those descriptors so boot completes cleanly), `-r` restarts the watcher automatically if it crashes, `-S` sends its output to syslog – viewable under _Status > System Logs_ and rotated by pfSense, no separate logfile to manage – and `-P` writes a pidfile for easy stop/restart. The `-u` flag keeps Python from buffering its output so log lines reach syslog in real time.
 4.  Click **Save**.
 5.  Reboot your pfSense firewall to start the watcher daemon, or run the command manually from the console to start it immediately.
 
