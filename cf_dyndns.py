@@ -77,6 +77,12 @@ class PfSensePlatform(BasePlatform):
                             pass
                     else:
                         public_ips.append((iface, ip))
+        # Return IPs in the order interfaces are listed in physical_interfaces,
+        # not the order ifconfig happens to print them. Stable sort keeps
+        # multiple IPs on the same interface in their original order.
+        if physical_interfaces:
+            order = {iface: i for i, iface in enumerate(physical_interfaces)}
+            public_ips.sort(key=lambda pair: order.get(pair[0], len(order)))
         return public_ips
 
     def get_public_ipv6_addresses(self, physical_interfaces):
@@ -95,6 +101,10 @@ class PfSensePlatform(BasePlatform):
                     ip = match.group(1).split('%')[0]
                     if ip.startswith(("fe80", "fc", "fd")) or ip in ("::1", "::", "::10"): continue
                     public_ips.append((iface, ip))
+        # Match the ordering of physical_interfaces (see IPv4 method above).
+        if physical_interfaces:
+            order = {iface: i for i, iface in enumerate(physical_interfaces)}
+            public_ips.sort(key=lambda pair: order.get(pair[0], len(order)))
         return public_ips
 
     def get_gateway_monitoring_thresholds(self):
