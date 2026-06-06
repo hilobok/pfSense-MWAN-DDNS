@@ -511,7 +511,7 @@ if __name__ == "__main__":
     parser.add_argument("--force-update", action="store_true", help="Always run DNS update, even without detected IP change")
     parser.add_argument("--quiet", action="store_true", help="Minimal output")
     parser.add_argument("--reason", type=str, default="Scheduled", help="Reason for the run (e.g., Gateway-Event)")
-    parser.add_argument("--first-ip-only", action="store_true", help="Set only the first healthy IPv4 address in DNS instead of all available")
+    parser.add_argument("--first-ip-only", action="store_true", help="Set only the first healthy IPv4 address in DNS instead of all available (ordered by allowed_physical_interfaces)")
     args = parser.parse_args()
 
     # === Execution ===

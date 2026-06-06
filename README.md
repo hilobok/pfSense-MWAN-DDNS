@@ -68,7 +68,7 @@ Open `cf_dyndns.py` and edit the configuration variables at the bottom of the fi
 * `record_name`: The hostname you want to manage (e.g., `home.example.org`). Do **not** include a trailing dot.
 * `proxied`: `True` to enable the Cloudflare proxy (orange cloud). When `True`, TTL is automatically set to `1` (Cloudflare Auto). Set `False` for DNS-only mode.
 * `ttl`: Record TTL in seconds (e.g., `60`). Ignored when `proxied` is `True`.
-* `allowed_physical_interfaces`: A list of physical interface names for your WAN connections (e.g., `["em0", "ixl2"]`).
+* `allowed_physical_interfaces`: A list of physical interface names for your WAN connections (e.g., `["em0", "ixl2"]`). List order sets priority: detected IPs are returned in this order, so the first entry is preferred when `--first-ip-only` is used.
 
 ### Step 3: Configure pfSense DynDNS Service
 
@@ -177,7 +177,7 @@ All arguments are the same as `pdns_dyndns.py`, plus one additional flag:
 * `--force-update`: Always perform the Cloudflare update, bypassing the state check.
 * `--quiet`: Minimal output.
 * `--reason REASON`: Logging label for why the script ran.
-* `--first-ip-only`: Limits the DNS update to the first healthy IPv4 address instead of all healthy IPs. Useful when only a single A record is desired (e.g. when the Cloudflare proxy is enabled).
+* `--first-ip-only`: Limits the DNS update to the first healthy IPv4 address instead of all healthy IPs. "First" follows the order of `allowed_physical_interfaces`, so the earliest-listed interface that is currently healthy wins. Useful when only a single A record is desired (e.g. when the Cloudflare proxy is enabled).
 
 ### `gateway_watcher.py` — Watcher Daemon
 
